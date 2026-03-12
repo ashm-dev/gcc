@@ -12263,7 +12263,7 @@ and,
  (BUILT_IN_CONSTANT_P @0))
 
 (simplify
-  (ne (rshift (bit_not @0) INTEGER_CST@2) integer_zerop)
+  (ne (rshift (bit_not @0) INTEGER_CST@2) integer_zerop@3)
   (with
     {
       tree utype = unsigned_type_for (TREE_TYPE (@0));
@@ -12273,8 +12273,13 @@ and,
 
 (simplify
   (eq (bit_and (bit_xor @0 INTEGER_CST@3) INTEGER_CST@2) integer_zerop)
-  (with
-    {
-      tree utype = unsigned_type_for (TREE_TYPE (@0));
-    }
-  (eq (lshift:utype (convert:utype @0) (CLZ:utype @2)) (lshift:utype @3 (CLZ:utype @2)))))
+  (if (wi::ctz (wi::to_wide (@2)) == 0
+       && wi::exact_log2 (wi::to_wide (@2) + 1) >= 0)
+   (with
+     {
+       tree utype = unsigned_type_for (TREE_TYPE (@0));
+       HOST_WIDE_INT val = wi::clz (wi::to_wide (@2));
+      tree count = build_int_cst (integer_type_node, val);
+       tree rhs = wide_int_to_tree (utype, wi::lshift (wi::to_wide (@3), val));
+     }
+  (eq (lshift (convert:utype @0) { count; }) { rhs; }))))
