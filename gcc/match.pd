@@ -12267,9 +12267,11 @@ and,
   (with
     {
       tree utype = unsigned_type_for (TREE_TYPE (@0));
-      tree tem = const_binop (LSHIFT_EXPR, utype, build_one_cst (utype), @2);
+      wide_int x = wi::lshift (wi::one (TYPE_PRECISION (utype)),
+			       wi::to_wide (@2));
+      tree tem = wide_int_to_tree (utype, wi::bit_not (x));
     }
-    (le:utype (convert:utype @0) (minus { build_all_ones_cst (utype); } { tem; }))))
+    (le (convert:utype @0) { tem; } )))
 
 (simplify
   (eq (bit_and (bit_xor @0 INTEGER_CST@3) INTEGER_CST@2) integer_zerop)
@@ -12279,7 +12281,7 @@ and,
      {
        tree utype = unsigned_type_for (TREE_TYPE (@0));
        HOST_WIDE_INT val = wi::clz (wi::to_wide (@2));
-      tree count = build_int_cst (integer_type_node, val);
+       tree count = build_int_cst (integer_type_node, val);
        tree rhs = wide_int_to_tree (utype, wi::lshift (wi::to_wide (@3), val));
      }
   (eq (lshift (convert:utype @0) { count; }) { rhs; }))))
