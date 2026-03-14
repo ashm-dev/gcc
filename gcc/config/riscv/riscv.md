@@ -3178,7 +3178,7 @@
 			 (match_operand 2 "shifted_const_arith_operand"))
 		  (const_int 0)))
    (clobber (match_scratch:X 3 "=&r"))]
-  ""
+  "!SMALL_OPERAND (INTVAL (operands[2]))"
   "#"
   "&& reload_completed"
   [(set (match_dup 3) (ashiftrt:X (match_dup 1) (match_dup 4)))
