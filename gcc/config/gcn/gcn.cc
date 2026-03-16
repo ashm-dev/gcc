@@ -505,6 +505,11 @@ VnMODE (int n, machine_mode mode)
 static unsigned char
 gcn_class_max_nregs (reg_class_t rclass, machine_mode mode)
 {
+  /* The aperture registers always hold a 64-bit value, though they can be
+     accessed as either full registers or their lower half.  */
+  if (rclass == MEMORY_APERTURE_REGS)
+    return 1;
+
   /* Scalar registers are 32bit, vector registers are in fact tuples of
      64 lanes.  */
   if (rclass == VGPR_REGS || rclass == AVGPR_REGS
@@ -603,6 +608,14 @@ gcn_hard_regno_mode_ok (unsigned int regno, machine_mode mode)
     }
   if (regno == ARG_POINTER_REGNUM || regno == FRAME_POINTER_REGNUM)
     return true;
+
+  if (MEMORY_APERTURE_REG_P (regno))
+    /* Memory aperture registers are accessible either by their lower half
+       (that is always zero, but accessible anyway), or by their whole value.
+       We, for now, don't permit the former, since there's no use to those
+       values yet.  */
+    return mode == DImode;
+
   if (SGPR_REGNO_P (regno))
     /* We restrict double register values to aligned registers.  */
     return (sgpr_1reg_mode_p (mode)
@@ -646,6 +659,8 @@ gcn_regno_reg_class (int regno)
     case EXEC_HI_REG:
       return EXEC_MASK_REG;
     }
+  if (MEMORY_APERTURE_REG_P (regno))
+    return MEMORY_APERTURE_REGS;
   if (VGPR_REGNO_P (regno))
     return VGPR_REGS;
   if (AVGPR_REGNO_P (regno))
@@ -766,6 +781,9 @@ gcn_operand_part (machine_mode mode, rtx op, int n)
       if (REG_P (op))
 	{
 	  gcc_assert (REGNO (op) + n < FIRST_PSEUDO_REGISTER);
+	  gcc_assert (!MEMORY_APERTURE_REG_P (REGNO (op))
+		      /* We can't access the higher parts of aperture regs.  */
+		      || n == 0);
 	  return gen_rtx_REG (vsimode, REGNO (op) + n);
 	}
       if (GET_CODE (op) == CONST_VECTOR)
@@ -786,6 +804,9 @@ gcn_operand_part (machine_mode mode, rtx op, int n)
   else if (GET_MODE_SIZE (mode) == 8 && REG_P (op))
     {
       gcc_assert (REGNO (op) + n < FIRST_PSEUDO_REGISTER);
+      gcc_assert (!MEMORY_APERTURE_REG_P (REGNO (op))
+		  /* We can't access the higher parts of aperture regs.  */
+		  || n == 0);
       return gen_rtx_REG (SImode, REGNO (op) + n);
     }
   else
@@ -3704,7 +3725,8 @@ gcn_hard_regno_rename_ok (unsigned int from_reg, unsigned int to_reg)
       || from_reg == EXEC_LO_REG || from_reg == EXEC_HI_REG
       || to_reg == SCC_REG
       || to_reg == VCC_LO_REG || to_reg == VCC_HI_REG
-      || to_reg == EXEC_LO_REG || to_reg == EXEC_HI_REG)
+      || to_reg == EXEC_LO_REG || to_reg == EXEC_HI_REG
+      || MEMORY_APERTURE_REG_P (to_reg))
     return false;
 
   /* Allow the link register to be used if it was saved.  */
@@ -3999,6 +4021,8 @@ gcn_memory_move_cost (machine_mode mode, reg_class_t regclass, bool in)
     case SGPR_DST_REGS:
     case GENERAL_REGS:
     case AFP_REGS:
+      /* This one can't be written to.  */
+    case MEMORY_APERTURE_REGS:
       if (!in)
 	return (STORE_COST + 2) * nregs;
       return LOAD_COST * nregs;
@@ -6847,8 +6871,13 @@ print_reg (FILE *file, rtx x)
   machine_mode mode = GET_MODE (x);
   if (VECTOR_MODE_P (mode))
     mode = GET_MODE_INNER (mode);
-  if (mode == BImode || mode == QImode || mode == HImode || mode == SImode
-      || mode == HFmode || mode == SFmode)
+  if (MEMORY_APERTURE_REG_P (REGNO (x)))
+    {
+      gcc_assert (mode == DImode);
+      fprintf (file, "%s", reg_names[REGNO (x)]);
+    }
+  else if (mode == BImode || mode == QImode || mode == HImode || mode == SImode
+	   || mode == HFmode || mode == SFmode)
     fprintf (file, "%s", reg_names[REGNO (x)]);
   else if (mode == DImode || mode == DFmode)
     {
